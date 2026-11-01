@@ -111,7 +111,8 @@ function App() {
 
       const response = await fetch(
 
-        'http://localhost:5000/api/tournaments'
+        
+        ' https://chessmate-backend-gx30.onrender.com'
 
       )
 
@@ -3073,4 +3074,3 @@ function App() {
 
 
 
-export default App
