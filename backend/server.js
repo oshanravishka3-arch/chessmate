@@ -10,24 +10,27 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// --------------------
+// ======================================================
 // DATABASE
-// --------------------
+// ======================================================
 
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB Connected Successfully"))
-  .catch((error) => console.log("MongoDB Connection Error:", error));
+  .catch((error) =>
+    console.log("MongoDB Connection Error:", error.message)
+  );
 
-// --------------------
+// ======================================================
 // TOURNAMENT MODEL
-// --------------------
+// ======================================================
 
 const tournamentSchema = new mongoose.Schema(
   {
     name: {
       type: String,
       required: true,
+      trim: true,
     },
 
     date: {
@@ -38,16 +41,19 @@ const tournamentSchema = new mongoose.Schema(
     rounds: {
       type: Number,
       required: true,
+      min: 1,
     },
 
     format: {
       type: String,
       required: true,
+      trim: true,
     },
 
     location: {
       type: String,
       required: true,
+      trim: true,
     },
   },
   {
@@ -57,25 +63,29 @@ const tournamentSchema = new mongoose.Schema(
 
 const Tournament = mongoose.model("Tournament", tournamentSchema);
 
-// --------------------
+// ======================================================
 // PLAYER MODEL
-// --------------------
+// ======================================================
 
 const playerSchema = new mongoose.Schema(
   {
     name: {
       type: String,
       required: true,
+      trim: true,
     },
 
     club: {
       type: String,
       required: true,
+      trim: true,
     },
 
     rating: {
       type: Number,
       default: 0,
+      min: 0,
+      max: 4000,
     },
 
     tournament: {
@@ -96,9 +106,9 @@ const playerSchema = new mongoose.Schema(
 
 const Player = mongoose.model("Player", playerSchema);
 
-// --------------------
+// ======================================================
 // MATCH MODEL
-// --------------------
+// ======================================================
 
 const matchSchema = new mongoose.Schema(
   {
@@ -111,6 +121,7 @@ const matchSchema = new mongoose.Schema(
     round: {
       type: Number,
       required: true,
+      min: 1,
     },
 
     whitePlayer: {
@@ -138,28 +149,47 @@ const matchSchema = new mongoose.Schema(
 
 const Match = mongoose.model("Match", matchSchema);
 
-// --------------------
+// ======================================================
+// HELPER
+// ======================================================
+
+const validObjectId = (id) => mongoose.Types.ObjectId.isValid(id);
+
+// ======================================================
 // TEST ROUTE
-// --------------------
+// ======================================================
 
 app.get("/", (req, res) => {
   res.send("ChessMate API is running!");
 });
 
-// --------------------
+// ======================================================
 // TOURNAMENT ROUTES
-// --------------------
+// CREATE
+// ======================================================
 
 app.post("/api/tournaments", async (req, res) => {
   try {
     const { name, date, rounds, format, location } = req.body;
 
+    if (!name || !date || !rounds || !format || !location) {
+      return res.status(400).json({
+        message: "All tournament fields are required",
+      });
+    }
+
+    if (Number(rounds) < 1) {
+      return res.status(400).json({
+        message: "Rounds must be at least 1",
+      });
+    }
+
     const tournament = new Tournament({
-      name,
+      name: name.trim(),
       date,
-      rounds,
-      format,
-      location,
+      rounds: Number(rounds),
+      format: format.trim(),
+      location: location.trim(),
     });
 
     const savedTournament = await tournament.save();
@@ -173,6 +203,11 @@ app.post("/api/tournaments", async (req, res) => {
     });
   }
 });
+
+// ======================================================
+// TOURNAMENT ROUTES
+// READ ALL
+// ======================================================
 
 app.get("/api/tournaments", async (req, res) => {
   try {
@@ -188,18 +223,198 @@ app.get("/api/tournaments", async (req, res) => {
   }
 });
 
-// --------------------
+// ======================================================
+// TOURNAMENT ROUTES
+// READ ONE
+// ======================================================
+
+app.get("/api/tournaments/:id", async (req, res) => {
+  try {
+    if (!validObjectId(req.params.id)) {
+      return res.status(400).json({
+        message: "Invalid tournament ID",
+      });
+    }
+
+    const tournament = await Tournament.findById(req.params.id);
+
+    if (!tournament) {
+      return res.status(404).json({
+        message: "Tournament not found",
+      });
+    }
+
+    res.json(tournament);
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to load tournament",
+    });
+  }
+});
+
+// ======================================================
+// TOURNAMENT ROUTES
+// UPDATE
+// ======================================================
+
+app.put("/api/tournaments/:id", async (req, res) => {
+  try {
+    if (!validObjectId(req.params.id)) {
+      return res.status(400).json({
+        message: "Invalid tournament ID",
+      });
+    }
+
+    const { name, date, rounds, format, location } = req.body;
+
+    if (!name || !date || !rounds || !format || !location) {
+      return res.status(400).json({
+        message: "All tournament fields are required",
+      });
+    }
+
+    if (Number(rounds) < 1) {
+      return res.status(400).json({
+        message: "Rounds must be at least 1",
+      });
+    }
+
+    const updatedTournament = await Tournament.findByIdAndUpdate(
+      req.params.id,
+      {
+        name: name.trim(),
+        date,
+        rounds: Number(rounds),
+        format: format.trim(),
+        location: location.trim(),
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
+
+    if (!updatedTournament) {
+      return res.status(404).json({
+        message: "Tournament not found",
+      });
+    }
+
+    res.json(updatedTournament);
+  } catch (error) {
+    console.log(error);
+
+    res.status(500).json({
+      message: "Failed to update tournament",
+    });
+  }
+});
+
+// ======================================================
+// TOURNAMENT ROUTES
+// DELETE
+// ======================================================
+
+app.delete("/api/tournaments/:id", async (req, res) => {
+  try {
+    if (!validObjectId(req.params.id)) {
+      return res.status(400).json({
+        message: "Invalid tournament ID",
+      });
+    }
+
+    const tournament = await Tournament.findById(req.params.id);
+
+    if (!tournament) {
+      return res.status(404).json({
+        message: "Tournament not found",
+      });
+    }
+
+    // Delete matches belonging to this tournament
+    await Match.deleteMany({
+      tournament: req.params.id,
+    });
+
+    // Delete players belonging to this tournament
+    await Player.deleteMany({
+      tournament: req.params.id,
+    });
+
+    // Delete tournament
+    await Tournament.findByIdAndDelete(req.params.id);
+
+    res.json({
+      message: "Tournament deleted successfully",
+    });
+  } catch (error) {
+    console.log(error);
+
+    res.status(500).json({
+      message: "Failed to delete tournament",
+    });
+  }
+});
+
+// ======================================================
 // PLAYER ROUTES
-// --------------------
+// CREATE
+// ======================================================
 
 app.post("/api/players", async (req, res) => {
   try {
     const { name, club, rating, tournament } = req.body;
 
+    if (!name || !club || !tournament) {
+      return res.status(400).json({
+        message: "Name, club and tournament are required",
+      });
+    }
+
+    if (!validObjectId(tournament)) {
+      return res.status(400).json({
+        message: "Invalid tournament ID",
+      });
+    }
+
+    const tournamentExists = await Tournament.findById(tournament);
+
+    if (!tournamentExists) {
+      return res.status(404).json({
+        message: "Tournament not found",
+      });
+    }
+
+    const numericRating =
+      rating === "" || rating === undefined ? 0 : Number(rating);
+
+    if (
+      Number.isNaN(numericRating) ||
+      numericRating < 0 ||
+      numericRating > 4000
+    ) {
+      return res.status(400).json({
+        message: "Rating must be between 0 and 4000",
+      });
+    }
+
+    const duplicatePlayer = await Player.findOne({
+      tournament,
+      name: {
+        $regex: new RegExp(`^${name.trim()}$`, "i"),
+      },
+    });
+
+    if (duplicatePlayer) {
+      return res.status(400).json({
+        message: "This player is already registered in the tournament",
+      });
+    }
+
     const player = new Player({
-      name,
-      club,
-      rating,
+      name: name.trim(),
+      club: club.trim(),
+      rating: numericRating,
       tournament,
     });
 
@@ -220,6 +435,11 @@ app.post("/api/players", async (req, res) => {
   }
 });
 
+// ======================================================
+// PLAYER ROUTES
+// READ ALL
+// ======================================================
+
 app.get("/api/players", async (req, res) => {
   try {
     const players = await Player.find()
@@ -236,9 +456,23 @@ app.get("/api/players", async (req, res) => {
   }
 });
 
-app.delete("/api/players/:id", async (req, res) => {
+// ======================================================
+// PLAYER ROUTES
+// READ ONE
+// ======================================================
+
+app.get("/api/players/:id", async (req, res) => {
   try {
-    const player = await Player.findByIdAndDelete(req.params.id);
+    if (!validObjectId(req.params.id)) {
+      return res.status(400).json({
+        message: "Invalid player ID",
+      });
+    }
+
+    const player = await Player.findById(req.params.id).populate(
+      "tournament",
+      "name"
+    );
 
     if (!player) {
       return res.status(404).json({
@@ -246,19 +480,165 @@ app.delete("/api/players/:id", async (req, res) => {
       });
     }
 
+    res.json(player);
+  } catch (error) {
+    res.status(500).json({
+      message: "Failed to load player",
+    });
+  }
+});
+
+// ======================================================
+// PLAYER ROUTES
+// UPDATE
+// ======================================================
+
+app.put("/api/players/:id", async (req, res) => {
+  try {
+    if (!validObjectId(req.params.id)) {
+      return res.status(400).json({
+        message: "Invalid player ID",
+      });
+    }
+
+    const { name, club, rating, tournament } = req.body;
+
+    if (!name || !club || !tournament) {
+      return res.status(400).json({
+        message: "Name, club and tournament are required",
+      });
+    }
+
+    if (!validObjectId(tournament)) {
+      return res.status(400).json({
+        message: "Invalid tournament ID",
+      });
+    }
+
+    const tournamentExists = await Tournament.findById(tournament);
+
+    if (!tournamentExists) {
+      return res.status(404).json({
+        message: "Tournament not found",
+      });
+    }
+
+    const numericRating =
+      rating === "" || rating === undefined ? 0 : Number(rating);
+
+    if (
+      Number.isNaN(numericRating) ||
+      numericRating < 0 ||
+      numericRating > 4000
+    ) {
+      return res.status(400).json({
+        message: "Rating must be between 0 and 4000",
+      });
+    }
+
+    const duplicatePlayer = await Player.findOne({
+      _id: {
+        $ne: req.params.id,
+      },
+      tournament,
+      name: {
+        $regex: new RegExp(`^${name.trim()}$`, "i"),
+      },
+    });
+
+    if (duplicatePlayer) {
+      return res.status(400).json({
+        message: "Another player with this name is already registered",
+      });
+    }
+
+    const updatedPlayer = await Player.findByIdAndUpdate(
+      req.params.id,
+      {
+        name: name.trim(),
+        club: club.trim(),
+        rating: numericRating,
+        tournament,
+      },
+      {
+        new: true,
+        runValidators: true,
+      }
+    ).populate("tournament", "name");
+
+    if (!updatedPlayer) {
+      return res.status(404).json({
+        message: "Player not found",
+      });
+    }
+
+    res.json(updatedPlayer);
+  } catch (error) {
+    console.log(error);
+
+    res.status(500).json({
+      message: "Failed to update player",
+    });
+  }
+});
+
+// ======================================================
+// PLAYER ROUTES
+// DELETE
+// ======================================================
+
+app.delete("/api/players/:id", async (req, res) => {
+  try {
+    if (!validObjectId(req.params.id)) {
+      return res.status(400).json({
+        message: "Invalid player ID",
+      });
+    }
+
+    const player = await Player.findById(req.params.id);
+
+    if (!player) {
+      return res.status(404).json({
+        message: "Player not found",
+      });
+    }
+
+    const playerHasMatches = await Match.exists({
+      $or: [
+        {
+          whitePlayer: req.params.id,
+        },
+        {
+          blackPlayer: req.params.id,
+        },
+      ],
+    });
+
+    if (playerHasMatches) {
+      return res.status(400).json({
+        message:
+          "Cannot delete this player because the player already has matches",
+      });
+    }
+
+    await Player.findByIdAndDelete(req.params.id);
+
     res.json({
       message: "Player deleted successfully",
     });
   } catch (error) {
+    console.log(error);
+
     res.status(500).json({
       message: "Failed to delete player",
     });
   }
 });
 
-// --------------------
+// ======================================================
 // MATCH ROUTES
-// --------------------
+// CREATE
+// ======================================================
 
 app.post("/api/matches", async (req, res) => {
   try {
@@ -269,15 +649,39 @@ app.post("/api/matches", async (req, res) => {
       blackPlayer,
     } = req.body;
 
+    if (!tournament || !round || !whitePlayer || !blackPlayer) {
+      return res.status(400).json({
+        message: "All match fields are required",
+      });
+    }
+
+    if (
+      !validObjectId(tournament) ||
+      !validObjectId(whitePlayer) ||
+      !validObjectId(blackPlayer)
+    ) {
+      return res.status(400).json({
+        message: "Invalid tournament or player ID",
+      });
+    }
+
     if (whitePlayer === blackPlayer) {
       return res.status(400).json({
         message: "White and Black players cannot be the same",
       });
     }
 
+    const numericRound = Number(round);
+
+    if (Number.isNaN(numericRound) || numericRound < 1) {
+      return res.status(400).json({
+        message: "Round must be at least 1",
+      });
+    }
+
     const match = new Match({
       tournament,
-      round,
+      round: numericRound,
       whitePlayer,
       blackPlayer,
     });
@@ -309,6 +713,11 @@ app.post("/api/matches", async (req, res) => {
   }
 });
 
+// ======================================================
+// MATCH ROUTES
+// READ
+// ======================================================
+
 app.get("/api/matches", async (req, res) => {
   try {
     const matches = await Match.find()
@@ -328,9 +737,9 @@ app.get("/api/matches", async (req, res) => {
   }
 });
 
-// --------------------
+// ======================================================
 // AUTO PAIR ROUND
-// --------------------
+// ======================================================
 
 app.post("/api/matches/auto-pair", async (req, res) => {
   try {
@@ -342,9 +751,37 @@ app.post("/api/matches/auto-pair", async (req, res) => {
       });
     }
 
+    if (!validObjectId(tournament)) {
+      return res.status(400).json({
+        message: "Invalid tournament ID",
+      });
+    }
+
+    const numericRound = Number(round);
+
+    if (Number.isNaN(numericRound) || numericRound < 1) {
+      return res.status(400).json({
+        message: "Round must be at least 1",
+      });
+    }
+
+    const tournamentData = await Tournament.findById(tournament);
+
+    if (!tournamentData) {
+      return res.status(404).json({
+        message: "Tournament not found",
+      });
+    }
+
+    if (numericRound > tournamentData.rounds) {
+      return res.status(400).json({
+        message: `This tournament has only ${tournamentData.rounds} rounds`,
+      });
+    }
+
     const existingMatches = await Match.find({
       tournament,
-      round,
+      round: numericRound,
     });
 
     if (existingMatches.length > 0) {
@@ -374,7 +811,7 @@ app.post("/api/matches/auto-pair", async (req, res) => {
 
       const match = new Match({
         tournament,
-        round,
+        round: numericRound,
         whitePlayer: whitePlayer._id,
         blackPlayer: blackPlayer._id,
       });
@@ -389,19 +826,16 @@ app.post("/api/matches/auto-pair", async (req, res) => {
     if (players.length % 2 !== 0) {
       byePlayer = players[players.length - 1];
 
-      await Player.findByIdAndUpdate(
-        byePlayer._id,
-        {
-          $inc: {
-            points: 1,
-          },
-        }
-      );
+      await Player.findByIdAndUpdate(byePlayer._id, {
+        $inc: {
+          points: 1,
+        },
+      });
     }
 
     const populatedMatches = await Match.find({
       tournament,
-      round,
+      round: numericRound,
     })
       .populate("tournament", "name")
       .populate("whitePlayer", "name rating")
@@ -426,12 +860,18 @@ app.post("/api/matches/auto-pair", async (req, res) => {
   }
 });
 
-// --------------------
-// RESULT
-// --------------------
+// ======================================================
+// MATCH RESULT
+// ======================================================
 
 app.put("/api/matches/:id/result", async (req, res) => {
   try {
+    if (!validObjectId(req.params.id)) {
+      return res.status(400).json({
+        message: "Invalid match ID",
+      });
+    }
+
     const { result } = req.body;
 
     const allowedResults = [
@@ -476,23 +916,17 @@ app.put("/api/matches/:id/result", async (req, res) => {
       blackPoints = 0.5;
     }
 
-    await Player.findByIdAndUpdate(
-      match.whitePlayer,
-      {
-        $inc: {
-          points: whitePoints,
-        },
-      }
-    );
+    await Player.findByIdAndUpdate(match.whitePlayer, {
+      $inc: {
+        points: whitePoints,
+      },
+    });
 
-    await Player.findByIdAndUpdate(
-      match.blackPlayer,
-      {
-        $inc: {
-          points: blackPoints,
-        },
-      }
-    );
+    await Player.findByIdAndUpdate(match.blackPlayer, {
+      $inc: {
+        points: blackPoints,
+      },
+    });
 
     match.result = result;
 
@@ -523,12 +957,18 @@ app.put("/api/matches/:id/result", async (req, res) => {
   }
 });
 
-// --------------------
+// ======================================================
 // STANDINGS
-// --------------------
+// ======================================================
 
 app.get("/api/standings/:tournamentId", async (req, res) => {
   try {
+    if (!validObjectId(req.params.tournamentId)) {
+      return res.status(400).json({
+        message: "Invalid tournament ID",
+      });
+    }
+
     const players = await Player.find({
       tournament: req.params.tournamentId,
     }).sort({
@@ -544,9 +984,19 @@ app.get("/api/standings/:tournamentId", async (req, res) => {
   }
 });
 
-// --------------------
+// ======================================================
+// 404 API ROUTE
+// ======================================================
+
+app.use((req, res) => {
+  res.status(404).json({
+    message: "API route not found",
+  });
+});
+
+// ======================================================
 // SERVER
-// --------------------
+// ======================================================
 
 const PORT = process.env.PORT || 5000;
 
